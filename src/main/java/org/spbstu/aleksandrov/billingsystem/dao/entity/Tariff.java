@@ -27,7 +27,6 @@ public class Tariff {
     private int minutesLimit;
 
     @OneToMany(fetch = FetchType.EAGER, cascade = CascadeType.MERGE)
-    // cascade = {CascadeType.MERGE, CascadeType.PERSIST})
     @JoinColumn(name = "id_tariff")
     private List<Price> prices;
 

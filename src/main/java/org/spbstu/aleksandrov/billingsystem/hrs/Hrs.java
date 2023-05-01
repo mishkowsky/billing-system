@@ -17,21 +17,18 @@ import java.util.*;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-@Slf4j
 @Service
 public class Hrs {
 
     private final CustomerDao customerDao;
     private final PriceDao priceDao;
-    private final CallDao callDao;
-    private final MessageSender messageSender;
+    private final MessageSenderHrs messageSenderHrs;
     public static final SimpleDateFormat dateFormat = new SimpleDateFormat("yyyyMMddHHmmss");
 
-    public Hrs(CustomerDao customerDao, PriceDao priceDao, CallDao callDao, MessageSender messageSender) {
+    public Hrs(CustomerDao customerDao, PriceDao priceDao, MessageSenderHrs messageSenderHrs) {
         this.customerDao = customerDao;
         this.priceDao = priceDao;
-        this.callDao = callDao;
-        this.messageSender = messageSender;
+        this.messageSenderHrs = messageSenderHrs;
     }
 
     // HRS не возвращает ничего в BRT, а сам пишет в БД обновленные после тарификации данные.
@@ -101,15 +98,14 @@ public class Hrs {
             reader.close();
             fileReader.close();
             processCalls(customers);
-            log.info("HRS DONE SENDING MESSAGE");
-            messageSender.sendMessage();
+            messageSenderHrs.sendMessage();
         } catch (IOException | ParseException e) {
             throw new RuntimeException(e);
         }
     }
 
     @Transactional
-    public Map<Customer, Integer> processCalls(Map<Customer, List<Call>> customers) {
+    public void processCalls(Map<Customer, List<Call>> customers) {
         Map<Customer, Integer> totalCallsCosts = new HashMap<>();
         customerLoop:
         for (Customer customer : customers.keySet()) {
@@ -159,6 +155,5 @@ public class Hrs {
             customer.setUpdateTime(new Date());
             customerDao.editCustomer(customer);
         }
-        return totalCallsCosts;
     }
 }

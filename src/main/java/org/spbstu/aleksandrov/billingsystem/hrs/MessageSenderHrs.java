@@ -5,13 +5,13 @@ import org.springframework.jms.core.JmsTemplate;
 import org.springframework.stereotype.Service;
 
 @Service
-public class MessageSender {
+public class MessageSenderHrs {
 
     private final JmsTemplate template;
     private final String destination;
 
-    public MessageSender(JmsTemplate template,
-                         @Value("${hrs.done}") String destination) {
+    public MessageSenderHrs(JmsTemplate template,
+                            @Value("${hrs.done}") String destination) {
         this.template = template;
         this.destination = destination;
     }

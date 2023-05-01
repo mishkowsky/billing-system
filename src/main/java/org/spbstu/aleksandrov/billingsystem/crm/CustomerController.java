@@ -1,18 +1,21 @@
 package org.spbstu.aleksandrov.billingsystem.crm;
 
 import lombok.Getter;
-import lombok.extern.slf4j.Slf4j;
 import org.spbstu.aleksandrov.billingsystem.dao.entity.Call;
 import org.spbstu.aleksandrov.billingsystem.dao.entity.Customer;
-import org.spbstu.aleksandrov.billingsystem.dao.entity.Price;
 import org.spbstu.aleksandrov.billingsystem.dao.service.CustomerDao;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 
 import java.io.Serializable;
 import java.text.SimpleDateFormat;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.Comparator;
+import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 @RestController
 @RequestMapping("/abonent")
@@ -21,6 +24,8 @@ public class CustomerController {
     private final AtomicInteger payCounter = new AtomicInteger();
     private final AtomicInteger reportCounter = new AtomicInteger();
     private final CustomerDao customerDao;
+    Pattern rublesPattern = Pattern.compile("^\\d+");
+    Pattern kopeckPattern = Pattern.compile("\\d{2}(?<=\\d.)");
 
     public CustomerController(CustomerDao customerDao) {
         this.customerDao = customerDao;
@@ -29,24 +34,37 @@ public class CustomerController {
     @RequestMapping(method = RequestMethod.PATCH, path = "/pay")
     public PayResponse pay(
             @RequestParam(value = "numberPhone") Long phone,
-            @RequestParam(value = "money") Integer money // TODO в копейках?
+            @RequestParam(value = "money") String money
     ) {
         Customer customer = customerDao.getCustomerByNumber(phone);
-        customer.setBalance(customer.getBalance() + money);
+
+        if (!money.matches("\\d+.\\d{2}")) throw new IllegalArgumentException();
+
+        int rubles;
+        Matcher rublesMatcher = rublesPattern.matcher(money);
+        if (rublesMatcher.find()) rubles = Integer.parseInt(rublesMatcher.group(0));
+        else throw new IllegalArgumentException();
+
+        int kopeck;
+        Matcher kopeckMatcher = kopeckPattern.matcher(money);
+        if (kopeckMatcher.find()) kopeck = Integer.parseInt(kopeckMatcher.group(0));
+        else throw new IllegalArgumentException();
+
+        customer.setBalance(customer.getBalance() + rubles * 100 + kopeck);
         customerDao.editCustomer(customer);
-        return new PayResponse(payCounter.incrementAndGet(), phone, money);
+        return new PayResponse(payCounter.incrementAndGet(), phone, rubles * 100 + kopeck);
     }
 
     @Getter
     public static class PayResponse {
         private final int id;
         private final long numberPhone;
-        private final int money;
+        private final String money; // В рублях (х.хх)
 
         public PayResponse(int id, long numberPhone, int money) {
             this.id = id;
             this.numberPhone = numberPhone;
-            this.money = money;
+            this.money = money / 100 + "." + String.format("%02d", money % 100); // в рублях (х.хх)
         }
     }
 
@@ -80,13 +98,13 @@ public class CustomerController {
                     simpleDateFormat.format(call.getStartDate()),
                     simpleDateFormat.format(call.getEndDate()),
                     minutesFormat.format(call.getEndDate().getTime() - call.getStartDate().getTime() - 3 * 3600000),
-                    call.getPrice() / 100 + "." + call.getPrice() % 100
+                    call.getPrice() / 100 + "." + String.format("%02d", call.getPrice() % 100)
             ));
         }
 
         return new ReportResponse(
                 reportCounter.incrementAndGet(), phone, customer.getTariff().getCode(), callsResponses,
-                totalCost / 100 + "." + totalCost % 100, "rubles"
+                totalCost / 100 + "." + String.format("%02d", totalCost % 100), "rubles"
         );
     }
 
@@ -96,7 +114,7 @@ public class CustomerController {
         private final long numberPhone;
         private final String tariffCode;
         private final Collection<CallResponse> payload;
-        private final String totalCost;
+        private final String totalCost; // в рублях (х.хх)
         private final String monetaryUnit;
 
         public ReportResponse(

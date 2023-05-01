@@ -24,8 +24,8 @@ public class MessageSenderBrt {
             try {
                 BytesMessage bytesMessage = session.createBytesMessage();
                 FileInputStream fileInputStream = new FileInputStream(fileName);
-                final int BUFLEN = 64;
-                byte[] buf1 = new byte[BUFLEN];
+                final int BUF_LEN = 64;
+                byte[] buf1 = new byte[BUF_LEN];
                 int bytes_read;
                 while ((bytes_read = fileInputStream.read(buf1)) != -1) {
                     bytesMessage.writeBytes(buf1, 0, bytes_read);

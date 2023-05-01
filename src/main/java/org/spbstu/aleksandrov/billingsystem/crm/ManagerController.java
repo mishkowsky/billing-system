@@ -2,13 +2,13 @@ package org.spbstu.aleksandrov.billingsystem.crm;
 
 import jakarta.transaction.Transactional;
 import lombok.Getter;
-import lombok.extern.slf4j.Slf4j;
 import org.spbstu.aleksandrov.billingsystem.dao.entity.Customer;
 import org.spbstu.aleksandrov.billingsystem.dao.entity.Operator;
 import org.spbstu.aleksandrov.billingsystem.dao.entity.Tariff;
 import org.spbstu.aleksandrov.billingsystem.dao.service.CustomerDao;
 import org.spbstu.aleksandrov.billingsystem.dao.service.OperatorDao;
 import org.spbstu.aleksandrov.billingsystem.dao.service.TariffDao;
+import org.springframework.jms.annotation.JmsListener;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestMethod;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -21,7 +21,6 @@ import java.util.Date;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
 
-@Slf4j
 @RestController
 @RequestMapping("/manager")
 public class ManagerController {
@@ -31,7 +30,8 @@ public class ManagerController {
     private final OperatorDao operatorDao;
     private final AtomicInteger changeTariffCounter = new AtomicInteger();
     private final MessageSenderCrm sender;
-    private boolean crmDone = false;
+    private boolean hrsDone = false;
+    private final Object monitor = new Object();
 
     public ManagerController(CustomerDao customerDao, TariffDao tariffDao, OperatorDao operatorDao, MessageSenderCrm sender) {
         this.customerDao = customerDao;
@@ -41,7 +41,7 @@ public class ManagerController {
     }
 
     @Transactional
-    @RequestMapping(method = RequestMethod.PATCH, path = "/changeTariff/")
+    @RequestMapping(method = RequestMethod.PATCH, path = "/changeTariff")
     public ChangeTariffResponse changeTariff(
             @RequestParam(value = "numberPhone") Long phone,
             @RequestParam(value = "tariff_id") String tariffCode
@@ -68,12 +68,14 @@ public class ManagerController {
     }
 
     @Transactional
-    @RequestMapping(method = RequestMethod.POST, path = "/abonent/")
+    @RequestMapping(method = RequestMethod.POST, path = "/abonent")
     public AddAbonentResponse addAbonentResponse(
             @RequestParam(value = "numberPhone") Long phone,
             @RequestParam(value = "tariff_id") String tariffCode,
-            @RequestParam(value = "tariff_id") int balance // в копейках
+            @RequestParam(value = "balance") int balance // в копейках
     ) {
+        if (customerDao.getCustomerByNumber(phone) != null || phone / 1000000 != 7 || phone < 0)
+            throw new IllegalArgumentException(); // TODO
         Tariff tariff = tariffDao.findByTariffCode(tariffCode);
         Operator operator = operatorDao.findByName("Ромашка");
         Customer customer = new Customer(
@@ -85,40 +87,46 @@ public class ManagerController {
 
     @Getter
     public static class AddAbonentResponse implements Serializable {
-        private final long numberphone;
+        private final long numberPhone;
         private final String tariff_id;
-        private final int balance;
+        private final String balance; // в рублях (х.хх)
 
-        public AddAbonentResponse(long numberphone, String tariffId, int balance) {
-            this.numberphone = numberphone;
+        public AddAbonentResponse(long numberPhone, String tariffId, int balance) {
+            this.numberPhone = numberPhone;
             tariff_id = tariffId;
-            this.balance = balance;
+            this.balance = balance / 100 + "." + String.format("%02d", balance % 100); // в рублях (х.хх)
         }
     }
 
     @Transactional
-    @RequestMapping(method = RequestMethod.PATCH, path = "/billing/")
-    public BillingResponse billing() throws InterruptedException {
+    @RequestMapping(method = RequestMethod.PATCH, path = "/billing")
+    public synchronized BillingResponse billing() {
         Date now = new Date();
-        crmDone = false;
+        hrsDone = false;
         sender.sendMessage();
-        log.info("MESSAGE SEND WAIT FOR RESPONSE RESPONSE");
-        // TODO perform asynchronous wait??
-        while (!crmDone) {
-            log.info("WAITING");
-            Thread.sleep(500);
-            continue;
-        }
-        log.info("CRM RECEIVED RESPONSE");
-        List<Customer> customers = customerDao.findByGreaterDate(now);
         Collection<NumberResponse> numberResponses = new ArrayList<>();
+        while (!hrsDone) {
+            try {
+                wait();
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                e.printStackTrace();
+            }
+        }
+        List<Customer> customers = customerDao.findByGreaterDate(now);
         for (Customer customer : customers) {
             numberResponses.add(new NumberResponse(customer.getPhone(), customer.getBalance()));
         }
-        crmDone = false;
         return new BillingResponse(numberResponses);
     }
 
+    @JmsListener(destination = "hrs-done")
+    public synchronized void receive() {
+        hrsDone = true;
+        notifyAll();
+    }
+
+    @Getter
     public static class BillingResponse implements Serializable {
         private final Collection<NumberResponse> numbers;
 
@@ -127,18 +135,14 @@ public class ManagerController {
         }
     }
 
+    @Getter
     private static class NumberResponse implements Serializable {
         private final long phoneNumber;
-        private final int balance;
+        private final String balance;
 
         private NumberResponse(long phoneNumber, int balance) {
             this.phoneNumber = phoneNumber;
-            this.balance = balance;
+            this.balance = balance / 100 + "." + String.format("%02d", balance % 100); // в рублях (х.хх)
         }
     }
-
-    public void setCrmDone(boolean newValue) {
-        crmDone = newValue;
-    }
-
 }

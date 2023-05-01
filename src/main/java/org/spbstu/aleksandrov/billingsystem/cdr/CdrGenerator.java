@@ -12,27 +12,37 @@ import java.text.SimpleDateFormat;
 import java.util.*;
 
 @Service
-public class CDRGenerator {
+public class CdrGenerator {
 
     private final CustomerDao customerDao;
     private final MessageSenderCdr messageSenderCdr;
     // Используются для генерации дат в следующем периоде (месяце) при повторном вызове generateCDR()
-    private int callCounter = 0;
+    private int methodCallCounter = 0;
     private final static Random rand = new Random();
     private final String cdrFilePath;
+    private Calendar startPeriodDate;
+    private Calendar endPeriodDate;
+    private final static SimpleDateFormat dateFormat = new SimpleDateFormat("yyyyMMddHHmmss");
 
-    public CDRGenerator(CustomerDao customerDao, MessageSenderCdr messageSenderCdr,
+
+    public CdrGenerator(CustomerDao customerDao, MessageSenderCdr messageSenderCdr,
                         @Value("${cdr.path}") String cdrFilePath) {
         this.customerDao = customerDao;
         this.messageSenderCdr = messageSenderCdr;
         this.cdrFilePath = cdrFilePath;
     }
 
-    public void generateCDR(int callsPerCustomer) throws IOException {
+    public void generateCdr(int callsPerCustomer) throws IOException {
 
         Set<Long> numbers = new HashSet<>();
         List<Customer> customers = customerDao.getAll();
         customers.forEach(c -> numbers.add(c.getPhone()));
+
+        startPeriodDate = Calendar.getInstance();
+        startPeriodDate.add(Calendar.MONTH, methodCallCounter - 1);
+
+        endPeriodDate = Calendar.getInstance();
+        endPeriodDate.add(Calendar.MONTH, methodCallCounter);
 
         File cdrFile = new File(cdrFilePath);
         cdrFile.createNewFile();
@@ -40,15 +50,17 @@ public class CDRGenerator {
 
         Random rand = new Random();
 
+        // Для каждого номера генерируем [1; 2 * callsPerCustomer] звонков,
+        // в среднем выходит callsPerCustomer на абонента
         for (Long number : numbers) {
             int n = rand.nextInt(1, 2 * callsPerCustomer);
             while (n > 0) {
-                String line = generateCDRLine(number);
+                String line = generateCdrLine(number);
                 fos.write(line.getBytes());
                 n--;
             }
         }
-        callCounter++;
+        methodCallCounter++;
         fos.close();
         messageSenderCdr.sendMessage(cdrFile.getPath());
     }
@@ -56,29 +68,28 @@ public class CDRGenerator {
     public Date between(Date startInclusive, Date endExclusive) {
         long startMillis = startInclusive.getTime();
         long endMillis = endExclusive.getTime();
-
         long randomMillisSinceEpoch = rand.nextLong(startMillis, endMillis);
         return new Date(randomMillisSinceEpoch);
     }
 
-    public String generateCDRLine(Long number) {
+    public String generateCdrLine(Long number) {
         int callType = rand.nextInt(1, 3);
-
-        Calendar startPeriodDate = Calendar.getInstance();
-        startPeriodDate.add(Calendar.MONTH, -1);
-
-        Calendar endPeriodDate = Calendar.getInstance();
-        startPeriodDate.add(Calendar.MONTH, 0);
-
         Date startDate = between(
                 startPeriodDate.getTime(),
                 endPeriodDate.getTime()
         );
 
-        long callDuration = rand.nextLong(1, 18000001);
-        Date endDate = new Date(startDate.getTime() + callDuration);
+        // Для генерации продолжительности звонков возьмем экспоненциальный закон распределния,
+        // т.к. вероятность короткого звонка гораздо выше, чем продолжительного
+        // Функция экспоненциального распределения F(x) = 1 - e^(-λx)
+        // Пусть вероятность звонка длительностью 300 минут (300*60*1000 миллисекунд) 1%, т.е. F(300*60*1000) = 0.99
+        // 1 - e^(λ*300*60*1000) = 0.99, откуда λ = 2.56e-7
+        // Сгенерировать случайную велечину, подчиняющуюся закону экспоненциального распредления,
+        // используя генератор равномерного распредления можно как
+        // log(1-uniformRand(0, 1))/(-λ)
+        long duration = (long) (Math.log(1-rand.nextDouble())/(-2.56e-7f));
+        Date endDate = new Date(startDate.getTime() + duration);
 
-        SimpleDateFormat dateFormat = new SimpleDateFormat("yyyyMMddHH24mmss");
         return String.format(
                 "%02d,%11d,%s,%s\n",
                 callType, number, dateFormat.format(startDate), dateFormat.format(endDate)

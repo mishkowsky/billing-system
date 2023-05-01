@@ -1,11 +1,9 @@
 package org.spbstu.aleksandrov.billingsystem.crm;
 
-import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.jms.core.JmsTemplate;
 import org.springframework.stereotype.Service;
 
-@Slf4j
 @Service
 public class MessageSenderCrm {
 
@@ -19,9 +17,6 @@ public class MessageSenderCrm {
     }
 
     public void sendMessage() {
-        log.info("MESSAGE SEND TO CDR GENERATE");
         template.convertAndSend(destination, "");
     }
-
-
 }

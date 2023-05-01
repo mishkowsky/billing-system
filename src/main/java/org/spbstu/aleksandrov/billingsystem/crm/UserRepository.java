@@ -21,7 +21,7 @@ public class UserRepository {
                 "admin", User.builder().
                         login("admin").
                         password("admin").
-                        roles(List.of(new UserRole("ROLE_ADMIN"), new UserRole("ROLE_CUSTOMER"), new UserRole("ROLE_MANAGER"))).build(),
+                        roles(List.of(new UserRole("ROLE_CUSTOMER"), new UserRole("ROLE_MANAGER"))).build(),
                 "manager", User.builder().
                         login("manager").
                         password("manager").

@@ -1,6 +1,5 @@
 package org.spbstu.aleksandrov.billingsystem.crm;
 
-import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.authentication.AuthenticationProvider;
 import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
